@@ -1,0 +1,26 @@
+app-id: com.amrit.Pomo
+
+runtime: org.freedesktop.Platform
+runtime-version: "25.08"
+
+sdk: org.freedesktop.Sdk
+
+command: pomo
+
+finish-args:
+  - --socket=x11
+  - --socket=wayland
+  - --share=ipc
+  - --device=dri
+
+modules:
+  - name: pomo
+
+    buildsystem: simple
+
+    build-commands:
+      - install -Dm755 pomo /app/bin/pomo
+
+    sources:
+      - type: file
+        path: ../target/release/pomo
