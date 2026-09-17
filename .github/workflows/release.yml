@@ -47,8 +47,6 @@ jobs:
             libssl-dev \
             patchelf \
             rpm \
-            flatpak \
-            flatpak-builder
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -138,39 +136,6 @@ jobs:
              "${APP_NAME}-${VERSION}-x86_64.rpm"
 
       # ------------------------------------------------------------
-      # Flatpak
-      # ------------------------------------------------------------
-
-      - name: Add Flathub repository
-        run: |
-          flatpak remote-add --if-not-exists \
-            --user flathub \
-            https://dl.flathub.org/repo/flathub.flatpakrepo
-
-      - name: Install Flatpak SDK
-        run: |
-          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          sudo flatpak install -y flathub org.freedesktop.Sdk//25.08
-
-      - name: Build Flatpak
-        run: |
-          flatpak-builder \
-            --user \
-            --disable-rofiles-fuse \
-            --force-clean \
-            flatpak-build \
-            flatpak/com.amrit.Pomodoro.yml
-
-          flatpak build-export \
-            flatpak-repo \
-            flatpak-build
-
-          flatpak build-bundle \
-            flatpak-repo \
-            "${APP_NAME}-${VERSION}-x86_64.flatpak" \
-            com.amrit.Pomodoro
-
-      # ------------------------------------------------------------
       # Upload artifacts
       # ------------------------------------------------------------
 
@@ -181,7 +146,6 @@ jobs:
           path: |
             *.AppImage
             *.rpm
-            *.flatpak
 
   # --------------------------------------------------------------
   # GitHub Release
@@ -206,4 +170,3 @@ jobs:
           files: |
             dist/*.AppImage
             dist/*.rpm
-            dist/*.flatpak
