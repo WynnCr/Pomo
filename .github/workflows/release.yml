@@ -147,6 +147,11 @@ jobs:
             --user flathub \
             https://dl.flathub.org/repo/flathub.flatpakrepo
 
+      - name: Install Flatpak SDK
+        run: |
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub org.freedesktop.Sdk//25.08
+
       - name: Build Flatpak
         run: |
           flatpak-builder \
