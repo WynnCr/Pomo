@@ -6,13 +6,53 @@ use gpui_kit::component::{
 use gpui_kit::*;
 use std::borrow::Cow;
 use std::time::Duration;
+
+#[derive(Clone, Copy, PartialEq)]
+enum Session {
+    Work,
+    ShortBreak,
+    LongBreak,
+}
+
+impl Session {
+    fn duration_secs(&self) -> u64 {
+        match self {
+            Session::Work => 25 * 60,
+            Session::ShortBreak => 5 * 60,
+            Session::LongBreak => 15 * 60,
+        }
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            Session::Work => "Focus",
+            Session::ShortBreak => "Short Break",
+            Session::LongBreak => "Long Break",
+        }
+    }
+
+    fn accent(&self) -> u32 {
+        match self {
+            Session::Work => 0xe5484d,
+            Session::ShortBreak => 0x4dabf7,
+            Session::LongBreak => 0x69db7c,
+        }
+    }
+}
+
 struct App {
+    session: Session,
     remaining: u64,
     running: bool,
     timer_started: bool,
+    completed_pomodoros: u32,
 }
 
 impl App {
+    fn total_secs(&self) -> u64 {
+        self.session.duration_secs()
+    }
+
     fn toggle_timer(&mut self, cx: &mut Context<Self>) {
         self.running = !self.running;
 
@@ -23,8 +63,31 @@ impl App {
     }
 
     fn reset(&mut self) {
-        self.remaining = 25 * 60;
+        self.remaining = self.session.duration_secs();
         self.running = false;
+        self.timer_started = false;
+    }
+
+    fn advance_session(&mut self) {
+        self.session = match self.session {
+            Session::Work => {
+                self.completed_pomodoros += 1;
+                if self.completed_pomodoros % 4 == 0 {
+                    Session::LongBreak
+                } else {
+                    Session::ShortBreak
+                }
+            }
+            Session::ShortBreak | Session::LongBreak => Session::Work,
+        };
+        self.remaining = self.session.duration_secs();
+        self.running = false;
+        self.timer_started = false;
+    }
+
+    fn skip(&mut self, cx: &mut Context<Self>) {
+        self.advance_session();
+        cx.notify();
     }
 
     fn start_timer(&mut self, cx: &mut Context<Self>) {
@@ -42,8 +105,7 @@ impl App {
                         cx.notify();
                         true
                     } else {
-                        app.running = false;
-                        app.timer_started = false;
+                        app.advance_session();
                         cx.notify();
                         false
                     }
@@ -64,16 +126,39 @@ impl Render for App {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let minutes = self.remaining / 60;
         let seconds = self.remaining % 60;
-
         let timer_text = format!("{minutes:02}:{seconds:02}");
+
+        let accent = self.session.accent();
+        let total = self.total_secs().max(1) as f32;
+        let elapsed_fraction = 1.0 - (self.remaining as f32 / total);
 
         let button_text = if self.running {
             "Pause"
-        } else if self.remaining == 25 * 60 {
-            "Start Timer"
+        } else if self.remaining == self.session.duration_secs() {
+            match self.session {
+                Session::Work => "Start Focus",
+                Session::ShortBreak | Session::LongBreak => "Start Break",
+            }
         } else {
             "Resume"
         };
+
+        let cycle_position = (self.completed_pomodoros % 4) as usize;
+        let cycle_filled = if self.session == Session::LongBreak {
+            4
+        } else {
+            cycle_position
+        };
+
+        let mut dots = div().flex().flex_row().gap_2();
+        for i in 0..4 {
+            let filled = i < cycle_filled;
+            dots = dots.child(div().size(px(8.0)).rounded_full().bg(if filled {
+                rgb(accent)
+            } else {
+                rgb(0x2a2c30)
+            }));
+        }
 
         div()
             .size_full()
@@ -88,34 +173,80 @@ impl Render for App {
                     .flex()
                     .flex_col()
                     .items_center()
-                    .gap_4()
-                    .child(div().text_size(px(80.0)).child(timer_text))
+                    .gap_6()
                     .child(
-                        Button::new("start")
-                            .danger()
-                            .large()
-                            .label(button_text)
-                            .w(px(180.0))
-                            .h(px(50.0))
-                            .rounded(px(15.0))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.toggle_timer(cx);
-                            })),
+                        div()
+                            .text_size(px(16.0))
+                            .text_color(rgb(accent))
+                            .child(self.session.label()),
                     )
+                    .child(div().text_size(px(80.0)).child(timer_text))
+                    // progress bar
                     .child(
-                        Button::new("reset")
-                            .label("Reset")
-                            .w(px(180.0))
-                            .h(px(45.0))
-                            .rounded(px(15.0))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.reset();
-                                cx.notify();
-                            })),
+                        div()
+                            .w(px(280.0))
+                            .h(px(6.0))
+                            .rounded_full()
+                            .bg(rgb(0x1e2024))
+                            .child(
+                                div()
+                                    .h_full()
+                                    .rounded_full()
+                                    .bg(rgb(accent))
+                                    .w(relative(elapsed_fraction.clamp(0.0, 1.0))),
+                            ),
+                    )
+                    .child(dots)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .gap_3()
+                            .child(
+                                Button::new("start")
+                                    .danger()
+                                    .large()
+                                    .label(button_text)
+                                    .w(px(180.0))
+                                    .h(px(50.0))
+                                    .rounded(px(15.0))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.toggle_timer(cx);
+                                    })),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .gap_3()
+                                    .child(
+                                        Button::new("reset")
+                                            .label("Reset")
+                                            .w(px(85.0))
+                                            .h(px(40.0))
+                                            .rounded(px(12.0))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.reset();
+                                                cx.notify();
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("skip")
+                                            .label("Skip")
+                                            .w(px(85.0))
+                                            .h(px(40.0))
+                                            .rounded(px(12.0))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.skip(cx);
+                                            })),
+                                    ),
+                            ),
                     ),
             )
     }
 }
+
 fn main() {
     let app = gpui_kit::application();
 
@@ -138,9 +269,11 @@ fn main() {
             },
             |window, cx| {
                 let view = cx.new(|_| App {
-                    remaining: 25 * 60,
+                    session: Session::Work,
+                    remaining: Session::Work.duration_secs(),
                     running: false,
                     timer_started: false,
+                    completed_pomodoros: 0,
                 });
 
                 cx.new(|cx| Root::new(view, window, cx))
