@@ -29,11 +29,20 @@ jobs:
           sudo apt-get install -y \
             build-essential \
             pkg-config \
+            clang \
+            lld \
             libfontconfig1-dev \
             libfreetype6-dev \
             libx11-dev \
             libxkbcommon-dev \
+            libxkbcommon-x11-dev \
             libwayland-dev \
+            libwayland-egl1 \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libxfixes-dev \
             libvulkan-dev \
             libssl-dev \
             patchelf \
