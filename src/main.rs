@@ -84,7 +84,7 @@ impl App {
         self.session = match self.session {
             Session::Work => {
                 self.completed_pomodoros += 1;
-                if self.completed_pomodoros % 4 == 0 {
+                if self.completed_pomodoros.is_multiple_of(4) {
                     Session::LongBreak
                 } else {
                     Session::ShortBreak
@@ -107,7 +107,7 @@ impl App {
             Session::ShortBreak | Session::LongBreak => "Break is over! Ready to focus?",
         };
 
-        // Standard OS Notification Triggers (Avoids needing heavy crates like notify-rust)
+        // Tried to reduce dependencies on unnecessary crates by using this approach
         #[cfg(target_os = "macos")]
         std::process::Command::new("osascript")
             .args([
@@ -142,7 +142,7 @@ impl App {
     fn start_timer(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |entity, cx| {
             loop {
-                // Tick every ~16ms for a silky smooth 60FPS progress bar animation
+                // Progress bar
                 cx.background_executor()
                     .timer(Duration::from_millis(16))
                     .await;
@@ -165,7 +165,6 @@ impl App {
                         cx.notify();
                         true
                     } else {
-                        // Send the notification unconditionally
                         app.notify_session_end();
 
                         app.advance_session();
@@ -186,7 +185,7 @@ impl App {
 
 impl Render for App {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Use ceil so that `00:01` is shown until the very last millisecond
+        // Use ceil so that 00:01 is shown until the very last millisecond
         let total_seconds = self.remaining.as_secs_f32().ceil() as u64;
         let minutes = total_seconds / 60;
         let seconds = total_seconds % 60;
@@ -245,7 +244,7 @@ impl Render for App {
                             .child(self.session.label()),
                     )
                     .child(div().text_size(px(80.0)).child(timer_text))
-                    // Smoothly Animated Progress bar
+                    // Progress bar
                     .child(
                         div()
                             .w(px(280.0))
