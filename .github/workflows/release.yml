@@ -121,7 +121,7 @@ jobs:
 
           ./appimagetool \
             --updateinformation \
-            "gh-releases-zsync|TheAK12|YOUR_REPO|latest|pomo-*-x86_64.AppImage.zsync" \
+            "gh-releases-zsync|WynnCr|Pomo|latest|pomo-*-x86_64.AppImage.zsync" \
             AppDir \
             "${APP_NAME}-${VERSION}-x86_64.AppImage"
 
