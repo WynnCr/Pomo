@@ -8,19 +8,22 @@ sdk: org.freedesktop.Sdk
 command: pomo
 
 finish-args:
-  - --socket=x11
-  - --socket=wayland
-  - --share=ipc
-  - --device=dri
+    - --socket=x11
+    - --socket=wayland
+    - --share=ipc
+    - --device=dri
+    # Session-end banner and completion chime.
+    - --talk-name=org.freedesktop.Notifications
+    - --socket=pulseaudio
 
 modules:
-  - name: pomo
+    - name: pomo
 
-    buildsystem: simple
+      buildsystem: simple
 
-    build-commands:
-      - install -Dm755 pomo /app/bin/pomo
+      build-commands:
+          - install -Dm755 pomo /app/bin/pomo
 
-    sources:
-      - type: file
-        path: ../target/release/pomo
+      sources:
+          - type: file
+            path: ../target/release/pomo
