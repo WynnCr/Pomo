@@ -5,7 +5,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::*;
 use std::borrow::Cow;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Session {
@@ -42,30 +42,42 @@ impl Session {
 
 struct App {
     session: Session,
-    remaining: u64,
+    duration: Duration,
+    remaining: Duration,
     running: bool,
-    timer_started: bool,
+    last_tick: Option<Instant>,
     completed_pomodoros: u32,
 }
 
 impl App {
-    fn total_secs(&self) -> u64 {
-        self.session.duration_secs()
+    fn new() -> Self {
+        let initial_session = Session::Work;
+        Self {
+            session: initial_session,
+            duration: Duration::from_secs(initial_session.duration_secs()),
+            remaining: Duration::from_secs(initial_session.duration_secs()),
+            running: false,
+            last_tick: None,
+            completed_pomodoros: 0,
+        }
     }
 
     fn toggle_timer(&mut self, cx: &mut Context<Self>) {
         self.running = !self.running;
 
-        if self.running && !self.timer_started {
-            self.timer_started = true;
+        if self.running {
+            self.last_tick = Some(Instant::now());
             self.start_timer(cx);
+        } else {
+            self.last_tick = None;
         }
     }
 
     fn reset(&mut self) {
-        self.remaining = self.session.duration_secs();
+        self.duration = Duration::from_secs(self.session.duration_secs());
+        self.remaining = self.duration;
         self.running = false;
-        self.timer_started = false;
+        self.last_tick = None;
     }
 
     fn advance_session(&mut self) {
@@ -80,9 +92,7 @@ impl App {
             }
             Session::ShortBreak | Session::LongBreak => Session::Work,
         };
-        self.remaining = self.session.duration_secs();
-        self.running = false;
-        self.timer_started = false;
+        self.reset(); // Re-initializes durations and stops timer
     }
 
     fn skip(&mut self, cx: &mut Context<Self>) {
@@ -90,21 +100,74 @@ impl App {
         cx.notify();
     }
 
+    fn notify_session_end(&self) {
+        let title = "Pomodoro Timer";
+        let message = match self.session {
+            Session::Work => "Focus session complete! Time for a break.",
+            Session::ShortBreak | Session::LongBreak => "Break is over! Ready to focus?",
+        };
+
+        // Standard OS Notification Triggers (Avoids needing heavy crates like notify-rust)
+        #[cfg(target_os = "macos")]
+        std::process::Command::new("osascript")
+            .args([
+                "-e",
+                &format!(
+                    "display notification \"{}\" with title \"{}\" sound name \"Glass\"",
+                    message, title
+                ),
+            ])
+            .spawn()
+            .ok();
+
+        #[cfg(target_os = "linux")]
+        std::process::Command::new("notify-send")
+            .args([title, message])
+            .spawn()
+            .ok();
+
+        #[cfg(target_os = "windows")]
+        std::process::Command::new("powershell")
+            .args([
+                "-Command",
+                &format!(
+                    "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('{}', '{}')",
+                    message, title
+                ),
+            ])
+            .spawn()
+            .ok();
+    }
+
     fn start_timer(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |entity, cx| {
             loop {
-                cx.background_executor().timer(Duration::from_secs(1)).await;
+                // Tick every ~16ms for a silky smooth 60FPS progress bar animation
+                cx.background_executor()
+                    .timer(Duration::from_millis(16))
+                    .await;
 
                 let should_continue = entity.update(cx, |app, cx| {
                     if !app.running {
-                        return true;
+                        return false; // Kill the background task if paused, saves CPU.
                     }
 
-                    if app.remaining > 0 {
-                        app.remaining -= 1;
+                    let now = Instant::now();
+                    let delta = if let Some(last) = app.last_tick {
+                        now.duration_since(last)
+                    } else {
+                        Duration::ZERO
+                    };
+                    app.last_tick = Some(now);
+
+                    if app.remaining > delta {
+                        app.remaining -= delta;
                         cx.notify();
                         true
                     } else {
+                        // Send the notification unconditionally
+                        app.notify_session_end();
+
                         app.advance_session();
                         cx.notify();
                         false
@@ -115,7 +178,6 @@ impl App {
                     break;
                 }
             }
-
             Ok::<(), gpui_kit::private::anyhow::Error>(())
         })
         .detach();
@@ -124,17 +186,19 @@ impl App {
 
 impl Render for App {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let minutes = self.remaining / 60;
-        let seconds = self.remaining % 60;
+        // Use ceil so that `00:01` is shown until the very last millisecond
+        let total_seconds = self.remaining.as_secs_f32().ceil() as u64;
+        let minutes = total_seconds / 60;
+        let seconds = total_seconds % 60;
         let timer_text = format!("{minutes:02}:{seconds:02}");
 
         let accent = self.session.accent();
-        let total = self.total_secs().max(1) as f32;
-        let elapsed_fraction = 1.0 - (self.remaining as f32 / total);
+        let total_duration_secs = self.duration.as_secs_f32().max(1.0);
+        let elapsed_fraction = 1.0 - (self.remaining.as_secs_f32() / total_duration_secs);
 
         let button_text = if self.running {
             "Pause"
-        } else if self.remaining == self.session.duration_secs() {
+        } else if self.remaining == self.duration {
             match self.session {
                 Session::Work => "Start Focus",
                 Session::ShortBreak | Session::LongBreak => "Start Break",
@@ -181,7 +245,7 @@ impl Render for App {
                             .child(self.session.label()),
                     )
                     .child(div().text_size(px(80.0)).child(timer_text))
-                    // progress bar
+                    // Smoothly Animated Progress bar
                     .child(
                         div()
                             .w(px(280.0))
@@ -268,14 +332,7 @@ fn main() {
                 ..Default::default()
             },
             |window, cx| {
-                let view = cx.new(|_| App {
-                    session: Session::Work,
-                    remaining: Session::Work.duration_secs(),
-                    running: false,
-                    timer_started: false,
-                    completed_pomodoros: 0,
-                });
-
+                let view = cx.new(|_| App::new());
                 cx.new(|cx| Root::new(view, window, cx))
             },
         )
