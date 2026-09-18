@@ -71,6 +71,10 @@ jobs:
       # AppImage
       # ------------------------------------------------------------
 
+      - name: Install zsync
+        run: |
+          sudo apt-get install -y zsync
+
       - name: Download linuxdeploy
         run: |
           wget -q \
@@ -107,10 +111,18 @@ jobs:
           ./linuxdeploy \
             --appdir AppDir \
             --desktop-file AppDir/usr/share/applications/pomodoro.desktop \
-            --icon-file AppDir/usr/share/icons/hicolor/512x512/apps/pomodoro.png \
-            --output appimage
+            --icon-file AppDir/usr/share/icons/hicolor/512x512/apps/pomodoro.png
 
-          mv *.AppImage \
+          wget -q \
+            https://github.com/AppImage/appimagetool/releases/latest/download/appimagetool-x86_64.AppImage \
+            -O appimagetool
+
+          chmod +x appimagetool
+
+          ./appimagetool \
+            --updateinformation \
+            "gh-releases-zsync|TheAK12|YOUR_REPO|latest|pomo-*-x86_64.AppImage.zsync" \
+            AppDir \
             "${APP_NAME}-${VERSION}-x86_64.AppImage"
 
       # ------------------------------------------------------------
